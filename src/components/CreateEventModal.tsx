@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Loader2, CheckCircle2, Calendar, Music, MapPin, Image, DollarSign, Ticket } from 'lucide-react';
+import { X, Loader2, CheckCircle2, Calendar, Music, MapPin, Image, DollarSign, Ticket, AlignLeft } from 'lucide-react';
 import type { VibeEvent, EventCategory } from '@/types';
 
 interface CreateEventModalProps {
@@ -16,6 +16,7 @@ interface FormState {
   banner_url: string;
   starting_price: string;
   total_tickets: string;
+  description: string;
 }
 
 const categoryMap: Record<string, EventCategory> = {
@@ -38,6 +39,7 @@ export default function CreateEventModal({ onClose, onPublish }: CreateEventModa
     banner_url: '',
     starting_price: '',
     total_tickets: '',
+    description: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -72,7 +74,7 @@ export default function CreateEventModal({ onClose, onPublish }: CreateEventModa
       event_date: form.event_date,
       banner_url: form.banner_url.trim() || 'https://images.pexels.com/photos/1763075/pexels-photo-1763075.jpeg?auto=compress&cs=tinysrgb&w=800',
       lineup: [],
-      description: '',
+      description: form.description.trim() || `Experience an unforgettable live event: ${form.title.trim()} at ${form.venue.trim()}! Join us for incredible music and vibes.`,
       tickets_remaining: Number(form.total_tickets),
       starting_price: Number(form.starting_price),
       status: 'active',
@@ -122,6 +124,18 @@ export default function CreateEventModal({ onClose, onPublish }: CreateEventModa
               className={inputClass}
             />
             {errors.title && <p className="text-red-400 text-xs mt-1">{errors.title}</p>}
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className={labelClass}><AlignLeft className="w-3 h-3" /> Description</label>
+            <textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => update('description', e.target.value)}
+              placeholder="Provide a captivating description for this event..."
+              className={`${inputClass} resize-none`}
+            />
           </div>
 
           {/* Category + Venue */}
