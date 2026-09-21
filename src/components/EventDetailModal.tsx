@@ -48,13 +48,32 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
     }
   };
 
-  // Issue 2: Handle promo codes from Offers page (VIBE10, EARLY20, GROUP5)
   const handleApplyPromo = () => {
     const code = promoCode.trim().toUpperCase();
     if (!code) {
       setDiscountPercent(0);
       setPromoMessage(null);
       return;
+    }
+
+    // Check if logged-in user already redeemed this promo code
+    try {
+      const storedUser = localStorage.getItem('vibepass_user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        if (user?.email) {
+          const usedPromos: string[] = JSON.parse(
+            localStorage.getItem(`vibepass_used_promos_${user.email.trim().toLowerCase()}`) || '[]'
+          );
+          if (usedPromos.includes(code)) {
+            setDiscountPercent(0);
+            setPromoMessage({ text: 'You have already redeemed this promo code!', isError: true });
+            return;
+          }
+        }
+      }
+    } catch {
+      // ignore
     }
 
     if (code === 'VIBE10') {
@@ -116,7 +135,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
             {/* Left: Details */}
             <div className="lg:col-span-2 p-6 space-y-6">
-              {/* Issue 1: Countdown - Days, Hours, Minutes (3 Columns without static seconds) */}
+              {/* Countdown - Days, Hours, Minutes */}
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'Days', value: countdown.days },
@@ -226,7 +245,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
               )}
 
-              {/* Issue 2: Promo Code with real discount application */}
+              {/* Promo Code with real discount application */}
               <div>
                 <label className="text-gray-400 text-xs font-medium uppercase mb-1.5 flex items-center gap-1">
                   <Tag className="w-3 h-3" /> Promo Code

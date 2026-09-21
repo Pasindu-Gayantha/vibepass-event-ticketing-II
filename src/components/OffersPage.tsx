@@ -153,29 +153,32 @@ function OfferCard({ offer, isRedeemed }: { offer: Offer; isRedeemed: boolean })
           )}
         </div>
 
-        {/* Copy code button */}
+        {/* Copy code button / Already Redeemed badge */}
         <button
           onClick={handleCopy}
           disabled={isRedeemed}
-          className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border font-mono font-bold text-sm transition-all ${
+          className={`w-full flex items-center justify-center px-4 py-2.5 rounded-xl border font-bold text-sm transition-all ${
             isRedeemed
               ? 'bg-white/5 border-gray-800 text-gray-500 cursor-not-allowed'
               : 'bg-[#0a0a0f]/50 border-purple-500/20 text-rose-400 hover:bg-[#0a0a0f]/80 cursor-pointer'
           }`}
         >
-          <span className="flex items-center gap-2">
-            {isRedeemed ? (
+          {isRedeemed ? (
+            <span className="flex items-center gap-2 text-xs text-gray-400 font-sans tracking-wide">
               <CheckCircle className="w-4 h-4 text-gray-500" />
-            ) : copied ? (
-              <Check className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <Copy className="w-4 h-4" />
-            )}
-            <span className={isRedeemed ? 'line-through text-gray-500' : ''}>{offer.code}</span>
-          </span>
-          <span className="text-xs font-sans">
-            {isRedeemed ? 'Already Redeemed' : copied ? 'Copied!' : 'Click to copy'}
-          </span>
+              Already Redeemed
+            </span>
+          ) : (
+            <div className="w-full flex items-center justify-between font-mono">
+              <span className="flex items-center gap-2">
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                {offer.code}
+              </span>
+              <span className="text-xs font-sans text-gray-500">
+                {copied ? 'Copied!' : 'Click to copy'}
+              </span>
+            </div>
+          )}
         </button>
       </div>
     </div>
