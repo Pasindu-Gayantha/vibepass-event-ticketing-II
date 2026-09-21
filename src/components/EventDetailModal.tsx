@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, Calendar, Clock, Users, Minus, Plus, Tag, Ticket } from 'lucide-react';
+import { X, MapPin, Calendar, Clock, Users, Minus, Plus, Tag, Ticket, ShieldAlert } from 'lucide-react';
 import type { VibeEvent, TicketTier } from '@/types';
 import { formatLKR, formatDateFull, formatTime, getCountdown } from '@/lib/utils';
 
@@ -15,7 +15,9 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [promoCode, setPromoCode] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [promoMessage, setPromoMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   useEffect(() => {
     const init: Record<string, number> = {};
@@ -23,7 +25,9 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
     setQuantities(init);
     setSelectedTierId(null);
     setPromoCode('');
-    setPromoApplied(false);
+    setDiscountPercent(0);
+    setPromoMessage(null);
+    setRoleError(null);
   }, [tiers]);
 
   const countdown = getCountdown(event.event_date);
@@ -31,8 +35,8 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   const selectedTier = tiers.find((t) => t.id === selectedTierId) || null;
   const selectedQty = selectedTier ? quantities[selectedTier.id] || 0 : 0;
   const subtotal = selectedTier ? selectedTier.price * selectedQty : 0;
-  const discount = promoApplied ? subtotal * 0.1 : 0;
-  const total = subtotal - discount;
+  const discount = (subtotal * discountPercent) / 100;
+  const total = Math.max(0, subtotal - discount);
 
   const handleQtyChange = (tierId: string, delta: number, max: number) => {
     setQuantities((prev) => {
@@ -47,16 +51,66 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   };
 
   const handleApplyPromo = () => {
-    if (promoCode.trim().toUpperCase() === 'VIBE10') {
-      setPromoApplied(true);
+    const code = promoCode.trim().toUpperCase();
+    if (!code) {
+      setDiscountPercent(0);
+      setPromoMessage(null);
+      return;
+    }
+
+    try {
+      const storedUser = localStorage.getItem('vibepass_user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        if (user?.email) {
+          const usedPromos: string[] = JSON.parse(
+            localStorage.getItem(`vibepass_used_promos_${user.email.trim().toLowerCase()}`) || '[]'
+          );
+          if (usedPromos.includes(code)) {
+            setDiscountPercent(0);
+            setPromoMessage({ text: 'You have already redeemed this promo code!', isError: true });
+            return;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (code === 'VIBE10') {
+      setDiscountPercent(10);
+      setPromoMessage({ text: 'VIBE10 applied — 10% discount added!', isError: false });
+    } else if (code === 'EARLY20') {
+      setDiscountPercent(20);
+      setPromoMessage({ text: 'EARLY20 applied — 20% Early Bird discount added!', isError: false });
+    } else if (code === 'GROUP5') {
+      setDiscountPercent(5);
+      setPromoMessage({ text: 'GROUP5 applied — 5% Group discount added!', isError: false });
     } else {
-      setPromoApplied(false);
+      setDiscountPercent(0);
+      setPromoMessage({ text: 'Invalid promo code. Try VIBE10, EARLY20, or GROUP5', isError: true });
     }
   };
 
   const handleBook = () => {
+    setRoleError(null);
+
+    // Check if user is an organizer
+    try {
+      const storedUser = localStorage.getItem('vibepass_user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        if (user?.role === 'organizer') {
+          setRoleError('Organizers cannot book tickets. Please sign in with a Customer account to purchase tickets.');
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     if (!selectedTier || selectedQty === 0) return;
-    onBook(selectedTier, selectedQty, promoApplied ? 'VIBE10' : '', subtotal, discount, total);
+    onBook(selectedTier, selectedQty, discountPercent > 0 ? promoCode.trim().toUpperCase() : '', subtotal, discount, total);
   };
 
   return (
@@ -73,7 +127,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-[#0a0a0f]/50 to-transparent" />
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-[#0a0a0f]/60 backdrop-blur-md border border-purple-500/20 flex items-center justify-center text-white hover:bg-[#0a0a0f]/80 transition-all"
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-[#0a0a0f]/60 backdrop-blur-md border border-purple-500/20 flex items-center justify-center text-white hover:bg-[#0a0a0f]/80 transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -99,18 +153,17 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
             {/* Left: Details */}
             <div className="lg:col-span-2 p-6 space-y-6">
               {/* Countdown */}
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'Days', value: countdown.days },
                   { label: 'Hours', value: countdown.hours },
                   { label: 'Minutes', value: countdown.minutes },
-                  { label: 'Seconds', value: countdown.seconds },
                 ].map((item) => (
                   <div key={item.label} className="text-center bg-white/[0.03] rounded-xl border border-purple-500/15 py-3">
                     <div className="text-2xl font-bold text-rose-400 tabular-nums">
                       {String(item.value).padStart(2, '0')}
                     </div>
-                    <div className="text-gray-500 text-xs uppercase">{item.label}</div>
+                    <div className="text-gray-500 text-xs uppercase font-medium mt-0.5">{item.label}</div>
                   </div>
                 ))}
               </div>
@@ -180,14 +233,14 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                           <div className="flex items-center gap-2">
                             <button
                               onClick={(e) => { e.stopPropagation(); handleQtyChange(tier.id, -1, tier.available); }}
-                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
                             >
                               <Minus className="w-4 h-4" />
                             </button>
                             <span className="text-white font-bold w-6 text-center tabular-nums">{qty}</span>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleQtyChange(tier.id, 1, tier.available); }}
-                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
                               disabled={qty >= tier.available}
                             >
                               <Plus className="w-4 h-4" />
@@ -218,26 +271,34 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                   <input
                     type="text"
                     value={promoCode}
-                    onChange={(e) => { setPromoCode(e.target.value); setPromoApplied(false); }}
-                    placeholder="Enter code"
-                    className="flex-1 bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-rose-500/50 transition-all"
+                    onChange={(e) => {
+                      setPromoCode(e.target.value);
+                      if (discountPercent > 0) {
+                        setDiscountPercent(0);
+                        setPromoMessage(null);
+                      }
+                    }}
+                    placeholder="e.g. VIBE10"
+                    className="flex-1 bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-rose-500/50 transition-all uppercase"
                   />
                   <button
                     onClick={handleApplyPromo}
-                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-all"
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-all cursor-pointer"
                   >
                     Apply
                   </button>
                 </div>
-                {promoApplied && (
-                  <p className="text-emerald-400 text-xs mt-1.5">VIBE10 applied - 10% discount!</p>
+                {promoMessage && (
+                  <p className={`text-xs mt-1.5 ${promoMessage.isError ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {promoMessage.text}
+                  </p>
                 )}
-                {promoCode && !promoApplied && (
-                  <p className="text-gray-500 text-xs mt-1.5">Try code "VIBE10" for 10% off</p>
+                {!promoMessage && (
+                  <p className="text-gray-500 text-xs mt-1.5">Use codes from Offers (e.g. VIBE10, EARLY20)</p>
                 )}
               </div>
 
-              {/* Subtotal */}
+              {/* Subtotal & Discount Calculation */}
               <div className="space-y-2 pt-3 border-t border-purple-500/15">
                 <div className="flex justify-between text-gray-400 text-sm">
                   <span>Subtotal</span>
@@ -245,7 +306,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
                 {discount > 0 && (
                   <div className="flex justify-between text-emerald-400 text-sm">
-                    <span>Discount (10%)</span>
+                    <span>Discount ({discountPercent}%)</span>
                     <span>-{formatLKR(discount)}</span>
                   </div>
                 )}
@@ -255,11 +316,19 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
               </div>
 
+              {/* Role Error Alert */}
+              {roleError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                  <span>{roleError}</span>
+                </div>
+              )}
+
               {/* Book Button */}
               <button
                 onClick={handleBook}
                 disabled={!selectedTier || selectedQty === 0}
-                className="w-full bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                className="w-full bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none cursor-pointer"
               >
                 {selectedTier && selectedQty > 0 ? `Book ${selectedQty} Ticket${selectedQty > 1 ? 's' : ''}` : 'Select Tickets to Book'}
               </button>

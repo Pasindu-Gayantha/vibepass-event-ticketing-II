@@ -29,14 +29,13 @@ export default function CheckoutModal({
   onClose,
   onConfirm,
 }: CheckoutModalProps) {
-  const [name, setName] = useState(initialUser?.name || '');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState(initialUser?.email || '');
   const [mobile, setMobile] = useState(initialUser?.phone || '');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'lankaqr'>('card');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // auto-filling already logged user details
   useEffect(() => {
     if (initialUser) {
       setName(initialUser.name || '');
@@ -72,6 +71,18 @@ export default function CheckoutModal({
     setLoading(true);
     try {
       await onConfirm({ name, email, mobile, paymentMethod });
+
+      // Save redeemed promo code for the user if applied
+      if (promoCode && promoCode.trim()) {
+        const normalizedEmail = email.trim().toLowerCase();
+        const storageKey = `vibepass_used_promos_${normalizedEmail}`;
+        const existingPromos: string[] = JSON.parse(localStorage.getItem(storageKey) || '[]');
+        const codeUpper = promoCode.trim().toUpperCase();
+        if (!existingPromos.includes(codeUpper)) {
+          existingPromos.push(codeUpper);
+          localStorage.setItem(storageKey, JSON.stringify(existingPromos));
+        }
+      }
     } catch {
       setErrors({ submit: 'Payment failed. Please try again.' });
     } finally {
@@ -91,7 +102,7 @@ export default function CheckoutModal({
           <h2 className="text-white font-bold text-lg">Checkout</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 transition-all"
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 transition-all cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -184,7 +195,7 @@ export default function CheckoutModal({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('card')}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                   paymentMethod === 'card'
                     ? 'border-rose-500/50 bg-rose-500/5'
                     : 'border-purple-500/15 bg-white/5 hover:border-purple-500/30'
@@ -199,7 +210,7 @@ export default function CheckoutModal({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('lankaqr')}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                   paymentMethod === 'lankaqr'
                     ? 'border-rose-500/50 bg-rose-500/5'
                     : 'border-purple-500/15 bg-white/5 hover:border-purple-500/30'
@@ -221,7 +232,7 @@ export default function CheckoutModal({
             type="button"
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-60 cursor-pointer"
           >
             {loading ? (
               <>

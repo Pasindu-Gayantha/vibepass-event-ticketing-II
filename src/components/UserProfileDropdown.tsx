@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Mail, Phone, Ticket, LogOut, ChevronDown, Settings } from 'lucide-react';
+import { Mail, Phone, Ticket, LogOut, ChevronDown, Settings, FileText } from 'lucide-react';
 import type { User as UserType } from '@/types';
 
 interface UserProfileDropdownProps {
@@ -18,6 +18,7 @@ export default function UserProfileDropdown({
   onLogOut,
 }: UserProfileDropdownProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const isOrganizer = user.role === 'organizer';
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -48,7 +49,7 @@ export default function UserProfileDropdown({
     <div ref={ref} className="relative">
       <button
         onClick={toggle}
-        className="flex items-center gap-2 px-2 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-purple-500/15 transition-all"
+        className="flex items-center gap-2 px-2 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-purple-500/15 transition-all cursor-pointer"
       >
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-lg shadow-purple-500/20">
           {initials}
@@ -66,7 +67,14 @@ export default function UserProfileDropdown({
               {initials}
             </div>
             <div className="min-w-0">
-              <div className="text-white font-semibold text-sm truncate">{user.name}</div>
+              <div className="text-white font-semibold text-sm truncate flex items-center gap-1.5">
+                <span>{user.name}</span>
+                {isOrganizer && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-purple-300 font-medium">
+                    Organizer
+                  </span>
+                )}
+              </div>
               <div className="text-gray-500 text-xs truncate">{user.email}</div>
             </div>
           </div>
@@ -83,30 +91,41 @@ export default function UserProfileDropdown({
         {/* My Profile / Settings */}
         <button
           onClick={() => { onEditProfile(); close(); }}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-rose-400 hover:bg-purple-500/10 transition-all"
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-rose-400 hover:bg-purple-500/10 transition-all cursor-pointer"
         >
           <Settings className="w-4 h-4" /> My Profile / Settings
         </button>
 
-        {/* My Booked Tickets */}
-        <button
-          onClick={() => { onMyTickets(); close(); }}
-          className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-300 hover:text-rose-400 hover:bg-purple-500/10 transition-all"
-        >
-          <span className="flex items-center gap-2">
-            <Ticket className="w-4 h-4" /> My Booked Tickets
-          </span>
-          {ticketCount > 0 && (
-            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-rose-500 to-purple-600 text-white text-[10px] font-bold flex items-center justify-center">
-              {ticketCount}
+        {/* Role-based link: "My Proposals" for Organizers vs "My Booked Tickets" for Customers */}
+        {isOrganizer ? (
+          <button
+            onClick={() => { onMyTickets(); close(); }}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-300 hover:text-rose-400 hover:bg-purple-500/10 transition-all cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-purple-400" /> My Proposals
             </span>
-          )}
-        </button>
+          </button>
+        ) : (
+          <button
+            onClick={() => { onMyTickets(); close(); }}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-300 hover:text-rose-400 hover:bg-purple-500/10 transition-all cursor-pointer"
+          >
+            <span className="flex items-center gap-2">
+              <Ticket className="w-4 h-4" /> My Booked Tickets
+            </span>
+            {ticketCount > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-r from-rose-500 to-purple-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {ticketCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* Log Out */}
         <button
           onClick={() => { onLogOut(); close(); }}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-red-400 hover:bg-red-500/10 transition-all border-t border-purple-500/10"
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:text-red-400 hover:bg-red-500/10 transition-all border-t border-purple-500/10 cursor-pointer"
         >
           <LogOut className="w-4 h-4" /> Log Out
         </button>
