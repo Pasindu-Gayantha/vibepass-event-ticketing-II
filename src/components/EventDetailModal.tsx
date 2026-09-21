@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, Calendar, Clock, Users, Minus, Plus, Tag, Ticket } from 'lucide-react';
+import { X, MapPin, Calendar, Clock, Users, Minus, Plus, Tag, Ticket, ShieldAlert } from 'lucide-react';
 import type { VibeEvent, TicketTier } from '@/types';
 import { formatLKR, formatDateFull, formatTime, getCountdown } from '@/lib/utils';
 
@@ -17,6 +17,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   const [promoCode, setPromoCode] = useState('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [promoMessage, setPromoMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   useEffect(() => {
     const init: Record<string, number> = {};
@@ -26,6 +27,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
     setPromoCode('');
     setDiscountPercent(0);
     setPromoMessage(null);
+    setRoleError(null);
   }, [tiers]);
 
   const countdown = getCountdown(event.event_date);
@@ -56,7 +58,6 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
       return;
     }
 
-    // Check if logged-in user already redeemed this promo code
     try {
       const storedUser = localStorage.getItem('vibepass_user');
       if (storedUser) {
@@ -92,6 +93,22 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   };
 
   const handleBook = () => {
+    setRoleError(null);
+
+    // Check if user is an organizer
+    try {
+      const storedUser = localStorage.getItem('vibepass_user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        if (user?.role === 'organizer') {
+          setRoleError('Organizers cannot book tickets. Please sign in with a Customer account to purchase tickets.');
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     if (!selectedTier || selectedQty === 0) return;
     onBook(selectedTier, selectedQty, discountPercent > 0 ? promoCode.trim().toUpperCase() : '', subtotal, discount, total);
   };
@@ -110,7 +127,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-[#0a0a0f]/50 to-transparent" />
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-[#0a0a0f]/60 backdrop-blur-md border border-purple-500/20 flex items-center justify-center text-white hover:bg-[#0a0a0f]/80 transition-all"
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-[#0a0a0f]/60 backdrop-blur-md border border-purple-500/20 flex items-center justify-center text-white hover:bg-[#0a0a0f]/80 transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -135,7 +152,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
             {/* Left: Details */}
             <div className="lg:col-span-2 p-6 space-y-6">
-              {/* Countdown - Days, Hours, Minutes */}
+              {/* Countdown */}
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'Days', value: countdown.days },
@@ -216,14 +233,14 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                           <div className="flex items-center gap-2">
                             <button
                               onClick={(e) => { e.stopPropagation(); handleQtyChange(tier.id, -1, tier.available); }}
-                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
                             >
                               <Minus className="w-4 h-4" />
                             </button>
                             <span className="text-white font-bold w-6 text-center tabular-nums">{qty}</span>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleQtyChange(tier.id, 1, tier.available); }}
-                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer"
                               disabled={qty >= tier.available}
                             >
                               <Plus className="w-4 h-4" />
@@ -245,7 +262,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
               )}
 
-              {/* Promo Code with real discount application */}
+              {/* Promo Code */}
               <div>
                 <label className="text-gray-400 text-xs font-medium uppercase mb-1.5 flex items-center gap-1">
                   <Tag className="w-3 h-3" /> Promo Code
@@ -266,7 +283,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                   />
                   <button
                     onClick={handleApplyPromo}
-                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-all"
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-all cursor-pointer"
                   >
                     Apply
                   </button>
@@ -299,11 +316,19 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
               </div>
 
+              {/* Role Error Alert */}
+              {roleError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                  <span>{roleError}</span>
+                </div>
+              )}
+
               {/* Book Button */}
               <button
                 onClick={handleBook}
                 disabled={!selectedTier || selectedQty === 0}
-                className="w-full bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                className="w-full bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none cursor-pointer"
               >
                 {selectedTier && selectedQty > 0 ? `Book ${selectedQty} Ticket${selectedQty > 1 ? 's' : ''}` : 'Select Tickets to Book'}
               </button>
