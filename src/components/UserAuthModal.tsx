@@ -30,16 +30,64 @@ export default function UserAuthModal({ onClose, onSuccess }: UserAuthModalProps
 
   const handleSignIn = async () => {
     setError('');
-    if (!signInEmail.trim() || !signInPassword.trim()) {
+    const email = signInEmail.trim().toLowerCase();
+    const pass = signInPassword.trim();
+
+    if (!email || !pass) {
       setError('Please enter both email and password.');
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    if (signInEmail.trim().toLowerCase() === DEMO_USER.email && signInPassword === 'User@123') {
-      onSuccess(DEMO_USER);
-    } else {
-      setError('Invalid credentials. Try the Demo Login button below.');
+
+    try {
+      // 1. Check if demo user
+      if (email === DEMO_USER.email && pass === 'User@123') {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('full_name, phone')
+          .ilike('email', email)
+          .maybeSingle();
+
+        const authUser: User = {
+          name: profile?.full_name || DEMO_USER.name,
+          email: DEMO_USER.email,
+          phone: profile?.phone || DEMO_USER.phone,
+        };
+
+        localStorage.setItem('vibepass_user', JSON.stringify(authUser));
+        onSuccess(authUser);
+        return;
+      }
+
+      // 2. Check if user exists in Supabase user_profiles
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name, phone')
+        .ilike('email', email)
+        .maybeSingle();
+
+      const savedPass = localStorage.getItem(`vibepass_pwd_${email}`);
+
+      if (profile) {
+        if (!savedPass || savedPass === pass) {
+          const authUser: User = {
+            name: profile.full_name || 'VibePass User',
+            email: email,
+            phone: profile.phone || '0771234567',
+          };
+          localStorage.setItem('vibepass_user', JSON.stringify(authUser));
+          onSuccess(authUser);
+          return;
+        } else {
+          setError('Invalid password. Please try again.');
+          return;
+        }
+      }
+
+      setError('Account not found. Please create an account first.');
+    } catch {
+      setError('Failed to sign in. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -55,20 +103,73 @@ export default function UserAuthModal({ onClose, onSuccess }: UserAuthModalProps
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    onSuccess({
-      name: signUpName,
-      email: signUpEmail,
-      phone: signUpPhone || 'Not provided',
-    });
+    const email = signUpEmail.trim().toLowerCase();
+    const name = signUpName.trim();
+    const phone = signUpPhone.trim() || '0771234567';
+
+    try {
+      // Store password in localStorage for client auth validation
+      localStorage.setItem(`vibepass_pwd_${email}`, signUpPassword.trim());
+
+      // Upsert profile in Supabase
+      await supabase
+        .from('user_profiles')
+        .upsert(
+          {
+            email,
+            full_name: name,
+            phone,
+          },
+          { onConflict: 'email' }
+        );
+
+      const newUser: User = {
+        name,
+        email,
+        phone,
+      };
+
+      localStorage.setItem('vibepass_user', JSON.stringify(newUser));
+      onSuccess(newUser);
+    } catch {
+      const fallbackUser: User = {
+        name,
+        email,
+        phone,
+      };
+      localStorage.setItem('vibepass_user', JSON.stringify(fallbackUser));
+      onSuccess(fallbackUser);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDemoLogin = async () => {
     setLoading(true);
     setSignInEmail(DEMO_USER.email);
     setSignInPassword('User@123');
-    await new Promise((r) => setTimeout(r, 400));
-    onSuccess(DEMO_USER);
+
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name, phone')
+        .ilike('email', DEMO_USER.email)
+        .maybeSingle();
+
+      const authUser: User = {
+        name: profile?.full_name || DEMO_USER.name,
+        email: DEMO_USER.email,
+        phone: profile?.phone || DEMO_USER.phone,
+      };
+
+      localStorage.setItem('vibepass_user', JSON.stringify(authUser));
+      onSuccess(authUser);
+    } catch {
+      localStorage.setItem('vibepass_user', JSON.stringify(DEMO_USER));
+      onSuccess(DEMO_USER);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -207,11 +308,10 @@ export default function UserAuthModal({ onClose, onSuccess }: UserAuthModalProps
 
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-          {/* Submit button */}
           <button
             onClick={tab === 'signin' ? handleSignIn : handleSignUp}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-500 to-purple-600 hover:from-rose-400 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/25 disabled:opacity-60 cursor-pointer"
           >
             {loading ? (
               <>
@@ -223,7 +323,6 @@ export default function UserAuthModal({ onClose, onSuccess }: UserAuthModalProps
             )}
           </button>
 
-          {/* Demo Login */}
           {tab === 'signin' && (
             <>
               <div className="flex items-center gap-3">
@@ -234,7 +333,7 @@ export default function UserAuthModal({ onClose, onSuccess }: UserAuthModalProps
               <button
                 onClick={handleDemoLogin}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-rose-400 font-semibold py-2.5 rounded-xl border border-purple-500/20 transition-all disabled:opacity-60"
+                className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-rose-400 font-semibold py-2.5 rounded-xl border border-purple-500/20 transition-all disabled:opacity-60 cursor-pointer"
               >
                 <Zap className="w-4 h-4" />
                 Demo User Login
