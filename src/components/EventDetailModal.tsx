@@ -15,7 +15,8 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [promoCode, setPromoCode] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [promoMessage, setPromoMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
   useEffect(() => {
     const init: Record<string, number> = {};
@@ -23,7 +24,8 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
     setQuantities(init);
     setSelectedTierId(null);
     setPromoCode('');
-    setPromoApplied(false);
+    setDiscountPercent(0);
+    setPromoMessage(null);
   }, [tiers]);
 
   const countdown = getCountdown(event.event_date);
@@ -31,8 +33,8 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
   const selectedTier = tiers.find((t) => t.id === selectedTierId) || null;
   const selectedQty = selectedTier ? quantities[selectedTier.id] || 0 : 0;
   const subtotal = selectedTier ? selectedTier.price * selectedQty : 0;
-  const discount = promoApplied ? subtotal * 0.1 : 0;
-  const total = subtotal - discount;
+  const discount = (subtotal * discountPercent) / 100;
+  const total = Math.max(0, subtotal - discount);
 
   const handleQtyChange = (tierId: string, delta: number, max: number) => {
     setQuantities((prev) => {
@@ -46,17 +48,33 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
     }
   };
 
+  // Issue 2: Handle promo codes from Offers page (VIBE10, EARLY20, GROUP5)
   const handleApplyPromo = () => {
-    if (promoCode.trim().toUpperCase() === 'VIBE10') {
-      setPromoApplied(true);
+    const code = promoCode.trim().toUpperCase();
+    if (!code) {
+      setDiscountPercent(0);
+      setPromoMessage(null);
+      return;
+    }
+
+    if (code === 'VIBE10') {
+      setDiscountPercent(10);
+      setPromoMessage({ text: 'VIBE10 applied — 10% discount added!', isError: false });
+    } else if (code === 'EARLY20') {
+      setDiscountPercent(20);
+      setPromoMessage({ text: 'EARLY20 applied — 20% Early Bird discount added!', isError: false });
+    } else if (code === 'GROUP5') {
+      setDiscountPercent(5);
+      setPromoMessage({ text: 'GROUP5 applied — 5% Group discount added!', isError: false });
     } else {
-      setPromoApplied(false);
+      setDiscountPercent(0);
+      setPromoMessage({ text: 'Invalid promo code. Try VIBE10, EARLY20, or GROUP5', isError: true });
     }
   };
 
   const handleBook = () => {
     if (!selectedTier || selectedQty === 0) return;
-    onBook(selectedTier, selectedQty, promoApplied ? 'VIBE10' : '', subtotal, discount, total);
+    onBook(selectedTier, selectedQty, discountPercent > 0 ? promoCode.trim().toUpperCase() : '', subtotal, discount, total);
   };
 
   return (
@@ -98,19 +116,18 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
             {/* Left: Details */}
             <div className="lg:col-span-2 p-6 space-y-6">
-              {/* Countdown */}
-              <div className="grid grid-cols-4 gap-3">
+              {/* Issue 1: Countdown - Days, Hours, Minutes (3 Columns without static seconds) */}
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: 'Days', value: countdown.days },
                   { label: 'Hours', value: countdown.hours },
                   { label: 'Minutes', value: countdown.minutes },
-                  { label: 'Seconds', value: countdown.seconds },
                 ].map((item) => (
                   <div key={item.label} className="text-center bg-white/[0.03] rounded-xl border border-purple-500/15 py-3">
                     <div className="text-2xl font-bold text-rose-400 tabular-nums">
                       {String(item.value).padStart(2, '0')}
                     </div>
-                    <div className="text-gray-500 text-xs uppercase">{item.label}</div>
+                    <div className="text-gray-500 text-xs uppercase font-medium mt-0.5">{item.label}</div>
                   </div>
                 ))}
               </div>
@@ -209,7 +226,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
               )}
 
-              {/* Promo Code */}
+              {/* Issue 2: Promo Code with real discount application */}
               <div>
                 <label className="text-gray-400 text-xs font-medium uppercase mb-1.5 flex items-center gap-1">
                   <Tag className="w-3 h-3" /> Promo Code
@@ -218,9 +235,15 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                   <input
                     type="text"
                     value={promoCode}
-                    onChange={(e) => { setPromoCode(e.target.value); setPromoApplied(false); }}
-                    placeholder="Enter code"
-                    className="flex-1 bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-rose-500/50 transition-all"
+                    onChange={(e) => {
+                      setPromoCode(e.target.value);
+                      if (discountPercent > 0) {
+                        setDiscountPercent(0);
+                        setPromoMessage(null);
+                      }
+                    }}
+                    placeholder="e.g. VIBE10"
+                    className="flex-1 bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-rose-500/50 transition-all uppercase"
                   />
                   <button
                     onClick={handleApplyPromo}
@@ -229,15 +252,17 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                     Apply
                   </button>
                 </div>
-                {promoApplied && (
-                  <p className="text-emerald-400 text-xs mt-1.5">VIBE10 applied - 10% discount!</p>
+                {promoMessage && (
+                  <p className={`text-xs mt-1.5 ${promoMessage.isError ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {promoMessage.text}
+                  </p>
                 )}
-                {promoCode && !promoApplied && (
-                  <p className="text-gray-500 text-xs mt-1.5">Try code "VIBE10" for 10% off</p>
+                {!promoMessage && (
+                  <p className="text-gray-500 text-xs mt-1.5">Use codes from Offers (e.g. VIBE10, EARLY20)</p>
                 )}
               </div>
 
-              {/* Subtotal */}
+              {/* Subtotal & Discount Calculation */}
               <div className="space-y-2 pt-3 border-t border-purple-500/15">
                 <div className="flex justify-between text-gray-400 text-sm">
                   <span>Subtotal</span>
@@ -245,7 +270,7 @@ export default function EventDetailModal({ event, tiers, loading, onClose, onBoo
                 </div>
                 {discount > 0 && (
                   <div className="flex justify-between text-emerald-400 text-sm">
-                    <span>Discount (10%)</span>
+                    <span>Discount ({discountPercent}%)</span>
                     <span>-{formatLKR(discount)}</span>
                   </div>
                 )}
