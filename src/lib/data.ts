@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { VibeEvent, TicketTier, Booking, OrganizerInquiry, BookingWithDetails } from '@/types';
 
-// Events සමග Categories සහ Ticket Tiers එකතු කරගෙන fetch කිරීම
+// Fetch events along with their associated categories and ticket tiers
 export async function fetchEvents(): Promise<VibeEvent[]> {
   const { data, error } = await supabase
     .from('events')
@@ -87,34 +87,35 @@ export async function fetchEventWithTiers(eventId: string): Promise<{ event: Vib
   };
 }
 
-// Create booking with 'completed' status, generate issued tickets, and decrement available ticket tier quantity
+// [M4] Create booking with 'completed' status, generate issued tickets, and decrement available ticket tier quantity
 export async function createBooking(
   booking: Omit<Booking, 'id' | 'created_at' | 'status'> & { status?: string }
 ): Promise<Booking> {
   const bookingRef = booking.booking_ref || generateBookingRef();
+  const orderId = crypto.randomUUID();
 
   // 1. Insert order record into the orders table with 'completed' status
-  const { error: orderError } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from('orders')
     .insert({
+      id: orderId,
       customer_name: booking.customer_name,
       customer_email: booking.email,
       customer_phone: booking.mobile,
       total_amount: booking.total_amount,
-      payment_status: 'paid',
+      payment_status: 'completed',
     })
     .select()
     .single();
 
   if (orderError) {
-    console.warn('Orders table fallback or insert issue:', orderError.message);
+    console.error('Orders table insert error:', orderError);
   }
 
-  const orderId = orderData?.id;
-
-  
-  if (orderId && booking.tier_id) {
+  // 2. Insert individual tickets into issued_tickets table
+  if (booking.tier_id) {
     const ticketsToInsert = Array.from({ length: booking.quantity }).map((_, index) => ({
+      id: crypto.randomUUID(),
       order_id: orderId,
       tier_id: booking.tier_id,
       ticket_hash: `${bookingRef}-${index + 1}`,
@@ -123,12 +124,31 @@ export async function createBooking(
 
     const { error: ticketError } = await supabase.from('issued_tickets').insert(ticketsToInsert);
     if (ticketError) {
-      console.warn('Could not insert into issued_tickets:', ticketError.message);
+      console.error('issued_tickets insert error:', ticketError);
+    }
+
+    // 3. Decrement available quantity in the ticket_tiers table
+    try {
+      const { data: tierData } = await supabase
+        .from('ticket_tiers')
+        .select('available_quantity')
+        .eq('id', booking.tier_id)
+        .maybeSingle();
+
+      if (tierData && typeof tierData.available_quantity === 'number') {
+        const newQty = Math.max(0, tierData.available_quantity - booking.quantity);
+        await supabase
+          .from('ticket_tiers')
+          .update({ available_quantity: newQty })
+          .eq('id', booking.tier_id);
+      }
+    } catch (e) {
+      console.warn('Inventory decrement issue:', e);
     }
   }
 
   return {
-    id: orderId || `local-${Date.now()}`,
+    id: orderId,
     event_id: booking.event_id,
     tier_id: booking.tier_id,
     customer_name: booking.customer_name,
@@ -146,7 +166,80 @@ export async function createBooking(
   };
 }
 
+// Fetch user tickets directly from Supabase by email for persistent session state
+export async function fetchUserTicketsByEmail(email: string): Promise<BookingWithDetails[]> {
+  if (!email) return [];
+
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id,
+      customer_name,
+      customer_email,
+      customer_phone,
+      total_amount,
+      created_at,
+      payment_status,
+      issued_tickets (
+        id,
+        ticket_hash,
+        is_checked_in,
+        tier:ticket_tiers (
+          tier_name,
+          price,
+          event:events (
+            title,
+            venue,
+            event_date,
+            banner_url
+          )
+        )
+      )
+    `)
+    .ilike('customer_email', email)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) {
+    console.error('Error fetching user tickets:', error);
+    return [];
+  }
+
+  const result: BookingWithDetails[] = [];
+  for (const order of data as any[]) {
+    const tickets = order.issued_tickets || [];
+    const firstTicket = tickets[0];
+    const event = firstTicket?.tier?.event;
+    const tier = firstTicket?.tier;
+    const ref = firstTicket?.ticket_hash ? firstTicket.ticket_hash.replace(/-\d+$/, '') : `ORD-${order.id.slice(0, 8).toUpperCase()}`;
+
+    result.push({
+      id: order.id,
+      event_id: '',
+      tier_id: '',
+      customer_name: order.customer_name || '',
+      email: order.customer_email || '',
+      mobile: order.customer_phone || '',
+      payment_method: 'card',
+      quantity: tickets.length || 1,
+      subtotal: Number(tier?.price || 0) * (tickets.length || 1),
+      discount: 0,
+      total_amount: Number(order.total_amount) || 0,
+      promo_code: null,
+      booking_ref: ref,
+      status: order.payment_status === 'completed' ? 'confirmed' : 'cancelled',
+      created_at: order.created_at,
+      event: event || null,
+      tier: tier ? { name: tier.tier_name, price: tier.price } : undefined,
+    });
+  }
+
+  return result;
+}
+
 export async function fetchBookingByRef(ref: string): Promise<BookingWithDetails | null> {
+  const cleanRef = ref.trim();
+  if (!cleanRef) return null;
+
   const { data, error } = await supabase
     .from('issued_tickets')
     .select(`
@@ -156,7 +249,8 @@ export async function fetchBookingByRef(ref: string): Promise<BookingWithDetails
       order:orders(customer_name, customer_email, customer_phone, total_amount, created_at),
       tier:ticket_tiers(tier_name, price, event:events(title, venue, event_date, banner_url))
     `)
-    .ilike('ticket_hash', `${ref}%`)
+    .or(`ticket_hash.eq.${cleanRef},ticket_hash.ilike.${cleanRef}%`)
+    .limit(1)
     .maybeSingle();
 
   if (error || !data) return null;
@@ -175,7 +269,7 @@ export async function fetchBookingByRef(ref: string): Promise<BookingWithDetails
     discount: 0,
     total_amount: Number(item.order?.total_amount) || 0,
     promo_code: null,
-    booking_ref: ref,
+    booking_ref: cleanRef,
     status: item.is_checked_in ? 'redeemed' : 'confirmed',
     created_at: item.order?.created_at || new Date().toISOString(),
     event: item.tier?.event,
@@ -186,31 +280,58 @@ export async function fetchBookingByRef(ref: string): Promise<BookingWithDetails
   };
 }
 
+// Fetch all bookings along with linked event and ticket tier info for Admin Dashboard
 export async function fetchAllBookings(): Promise<BookingWithDetails[]> {
   const { data, error } = await supabase
     .from('orders')
-    .select('*')
+    .select(`
+      id,
+      customer_name,
+      customer_email,
+      customer_phone,
+      total_amount,
+      payment_status,
+      created_at,
+      issued_tickets (
+        id,
+        ticket_hash,
+        tier:ticket_tiers (
+          tier_name,
+          event:events (
+            title
+          )
+        )
+      )
+    `)
     .order('created_at', { ascending: false });
 
-  if (error) return [];
+  if (error || !data) return [];
 
-  return ((data ?? []) as any[]).map((o) => ({
-    id: o.id,
-    event_id: '',
-    tier_id: '',
-    customer_name: o.customer_name,
-    email: o.customer_email,
-    mobile: o.customer_phone,
-    payment_method: 'card',
-    quantity: 1,
-    subtotal: Number(o.total_amount) || 0,
-    discount: 0,
-    total_amount: Number(o.total_amount) || 0,
-    promo_code: null,
-    booking_ref: `ORD-${o.id.slice(0, 8).toUpperCase()}`,
-    status: o.payment_status === 'paid' ? 'confirmed' : 'cancelled',
-    created_at: o.created_at,
-  }));
+  return (data as any[]).map((o) => {
+    const firstTicket = o.issued_tickets?.[0];
+    const eventTitle = firstTicket?.tier?.event?.title || '-';
+    const tierName = firstTicket?.tier?.tier_name || '-';
+
+    return {
+      id: o.id,
+      event_id: '',
+      tier_id: '',
+      customer_name: o.customer_name || 'Anonymous',
+      email: o.customer_email || '',
+      mobile: o.customer_phone || '',
+      payment_method: 'card',
+      quantity: o.issued_tickets?.length || 1,
+      subtotal: Number(o.total_amount) || 0,
+      discount: 0,
+      total_amount: Number(o.total_amount) || 0,
+      promo_code: null,
+      booking_ref: firstTicket?.ticket_hash ? firstTicket.ticket_hash.replace(/-\d+$/, '') : `ORD-${o.id.slice(0, 8).toUpperCase()}`,
+      status: o.payment_status === 'completed' ? 'confirmed' : 'cancelled',
+      created_at: o.created_at,
+      event: { title: eventTitle } as any,
+      tier: { name: tierName } as any,
+    };
+  });
 }
 
 export async function fetchRecentBookings(limit = 10): Promise<BookingWithDetails[]> {
@@ -218,7 +339,6 @@ export async function fetchRecentBookings(limit = 10): Promise<BookingWithDetail
   return bookings.slice(0, limit);
 }
 
-// Fetch inquiries for admin dashboard
 export async function fetchInquiries(): Promise<OrganizerInquiry[]> {
   const { data, error } = await supabase
     .from('organizer_inquiries')
@@ -334,7 +454,7 @@ export async function fetchAdminStats(): Promise<{
     supabase.from('issued_tickets').select('id', { count: 'exact' }),
   ]);
 
-  const paidOrders = (ordersRes.data ?? []).filter((o) => o.payment_status === 'paid');
+  const paidOrders = (ordersRes.data ?? []).filter((o) => o.payment_status === 'completed');
   const totalRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total_amount || 0), 0);
 
   return {
@@ -345,22 +465,31 @@ export async function fetchAdminStats(): Promise<{
   };
 }
 
+// Validates ticket by matching exact ticket_hash or base booking_ref prefix
 export async function validateTicket(ref: string): Promise<{ found: boolean; status: string | null }> {
+  const cleanRef = ref.trim();
+  if (!cleanRef) return { found: false, status: null };
+
   const { data, error } = await supabase
     .from('issued_tickets')
     .select('is_checked_in')
-    .ilike('ticket_hash', `${ref}%`)
+    .or(`ticket_hash.eq.${cleanRef},ticket_hash.ilike.${cleanRef}%`)
+    .limit(1)
     .maybeSingle();
 
   if (error || !data) return { found: false, status: null };
   return { found: true, status: data.is_checked_in ? 'redeemed' : 'confirmed' };
 }
 
+// Redeems ticket by marking issued ticket record(s) checked-in
 export async function redeemTicket(ref: string): Promise<void> {
+  const cleanRef = ref.trim();
+  if (!cleanRef) return;
+
   const { error } = await supabase
     .from('issued_tickets')
     .update({ is_checked_in: true })
-    .ilike('ticket_hash', `${ref}%`);
+    .or(`ticket_hash.eq.${cleanRef},ticket_hash.ilike.${cleanRef}%`);
 
   if (error) throw error;
 }

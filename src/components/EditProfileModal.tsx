@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, UserIcon, Mail, Phone, CheckCircle2, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import type { User } from '@/types';
 
 interface EditProfileModalProps {
@@ -30,15 +31,44 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
       setError('Phone number cannot be empty.');
       return;
     }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    onSave({ name: name.trim(), email: email.trim(), phone: phone.trim() });
-    setLoading(false);
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      onClose();
-    }, 1500);
+
+    try {
+      // 1. Update Supabase user_profiles table if user exists
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .update({
+          full_name: name.trim(),
+          phone: phone.trim(),
+        })
+        .eq('email', user.email);
+
+      if (profileError) {
+        console.warn('Could not update user_profiles table:', profileError.message);
+      }
+
+      const updatedUser: User = {
+        ...user,
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+      };
+
+      // 2. Persist in local storage for seamless reload
+      localStorage.setItem('vibepass_user', JSON.stringify(updatedUser));
+
+      onSave(updatedUser);
+      setSaved(true);
+      setTimeout(() => {
+        setSaved(false);
+        onClose();
+      }, 1200);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update profile.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const initials = name
@@ -96,9 +126,8 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2.5 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/30 transition-all"
+              disabled
+              className="w-full bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2.5 text-gray-400 text-sm cursor-not-allowed transition-all"
             />
           </div>
 
