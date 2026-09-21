@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0a0a0f;
+    color: #fff;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0f;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(147, 51, 234, 0.4);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 51, 234, 0.6);
+}
+
+/* Hide scrollbar for horizontal carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Profile dropdown toggle */
+.profile-dropdown {
+  display: none;
+}
+.profile-dropdown-open .profile-dropdown,
+.profile-dropdown.profile-dropdown-open {
+  display: block;
+}
+
+/* Toast animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Print styles for PDF ticket */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-ticket,
+  .print-ticket * {
+    visibility: visible;
+  }
+  .print-ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-ticket .print-qr {
+    background: #fff !important;
+    padding: 16px !important;
+  }
+  .print-ticket .print-text-dark {
+    color: #111 !important;
+  }
+  .print-ticket .print-text-muted {
+    color: #555 !important;
+  }
+  .print-ticket .print-border {
+    border-color: #ccc !important;
+  }
+  .print-ticket .print-accent {
+    background: #9333ea !important;
+    color: #fff !important;
+  }
+}
