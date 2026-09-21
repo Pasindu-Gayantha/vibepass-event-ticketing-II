@@ -35,17 +35,20 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
     setLoading(true);
 
     try {
-      // 1. Update Supabase user_profiles table if user exists
+      // 1. Upsert profile into user_profiles table (updates existing or inserts new)
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .update({
-          full_name: name.trim(),
-          phone: phone.trim(),
-        })
-        .eq('email', user.email);
+        .upsert(
+          {
+            email: email.trim(),
+            full_name: name.trim(),
+            phone: phone.trim(),
+          },
+          { onConflict: 'email' }
+        );
 
       if (profileError) {
-        console.warn('Could not update user_profiles table:', profileError.message);
+        console.warn('Could not upsert user_profiles table:', profileError.message);
       }
 
       const updatedUser: User = {
@@ -55,7 +58,7 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
         phone: phone.trim(),
       };
 
-      // 2. Persist in local storage for seamless reload
+      // 2. Persist in localStorage
       localStorage.setItem('vibepass_user', JSON.stringify(updatedUser));
 
       onSave(updatedUser);
@@ -73,10 +76,11 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
 
   const initials = name
     .split(' ')
+    .filter(Boolean)
     .map((w) => w[0])
     .slice(0, 2)
     .join('')
-    .toUpperCase();
+    .toUpperCase() || 'U';
 
   return (
     <div className="fixed inset-0 z-[85] flex items-center justify-center p-4" onClick={onClose}>
@@ -127,7 +131,7 @@ export default function EditProfileModal({ user, onClose, onSave }: EditProfileM
               type="email"
               value={email}
               disabled
-              className="w-full bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2.5 text-gray-400 text-sm cursor-not-allowed transition-all"
+              className="w-full bg-white/5 border border-purple-500/15 rounded-xl px-3 py-2.5 text-gray-400 text-sm cursor-not-allowed transition-all opacity-70"
             />
           </div>
 
